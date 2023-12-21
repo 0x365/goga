@@ -3,10 +3,10 @@ package main
 import (
 //    "C"
 //    "encoding/json"
-//    "encoding/csv"
-//    "os"
+   "encoding/csv"
+   "os"
    "fmt"
-//    "strconv"
+   "strconv"
 	"math/rand"
 )
 
@@ -16,9 +16,13 @@ type PopType struct {
 }
 
 const NUM_GENES = 4		// Even numbers work more evenly
-const MAX_GENE = 99
+const MAX_GENE = 81
 const POP_SIZE = 100
-const ITERATIONS = 1000
+const ITERATIONS = 100
+const PAR_RATIO = 0.4	// Ratio of sorted population to use as parents for next pop
+const ELITISM = 0.1
+
+const SAVE_FILE = "data/ga_results.csv"
 
 func fitness(genetics []int) (summer float64) {
 	for i:=0;i<len(genetics);i++{
@@ -46,18 +50,15 @@ func get_fit(pop [][]int) (fit_res []float64) {
 }
 
 func sort_pop(pop [][]int, fit_res []float64) ([][]int) {
-	// Sort pop based on fit_res
-	for j:=0;j<len(fit_res);j++{
-		key := fit_res[j]
-		key_pop := pop[j]
-		i := j-1
-		for (i>0 && fit_res[i]>key) {
-			fit_res[i+1] = fit_res[i]
-			pop[i+1] = pop[i]
-			i = i-1
+	// Bubble sort (WIP --- Could be improved for speed)
+	n := POP_SIZE
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if fit_res[j] < fit_res[j+1] {
+				fit_res[j], fit_res[j+1] = fit_res[j+1], fit_res[j]
+				pop[j], pop[j+1] = pop[j+1], pop[j]
+			}
 		}
-		fit_res[i+1] = key
-		pop[i+1] = key_pop
 	}
 	return pop
 }
@@ -84,46 +85,64 @@ func main() {
 	// Get initial fitness
 	fit_res := get_fit(pop)
 
-	min_res := 999999999999.0
+	// Set initial top results
+	min_res := fit_res[0]
 	best_pop := pop[0]
+
+	var pop_timeline [][]int
+	var fit_timeline []float64
 	
 	for i:=0;i<ITERATIONS;i++{
 		// Selection
-		sorted_pop := sort_pop(pop, fit_res)
-		// fmt.Println(sorted_pop)
+		sorted_pop := sort_pop(pop, fit_res)		
 
 		// Elitism
 		var new_pop [][]int
-		for i:=len(fit_res)-1;i>=len(fit_res)-10;i--{
-			new_pop = append(new_pop, sorted_pop[i])
-		}
-		// fmt.Println(new_pop)
+		new_pop = append(new_pop, sorted_pop[:(POP_SIZE*ELITISM)]...)
 
 		// Crossover
-		for i:=0;i<90;i++{
-			parent1 := pop[50+rand.Intn(POP_SIZE/2)]
-			parent2 := pop[50+rand.Intn(POP_SIZE/2)]
+		for i:=0;i<POP_SIZE*(1-ELITISM);i++{
+			parent1 := sorted_pop[POP_SIZE*(1-PAR_RATIO)+rand.Intn(POP_SIZE*PAR_RATIO)]
+			parent2 := sorted_pop[POP_SIZE*(1-PAR_RATIO)+rand.Intn(POP_SIZE*PAR_RATIO)]
 			new_pop = append(new_pop, mate(parent1, parent2))
 		}
 
 		// Calculate fitness
 		pop = new_pop
 		fit_res = get_fit(pop)
-		fmt.Println("Iteration:", i, "| Best pop:", pop[0], "| Fitness:", -fit_res[0], "hours")
-		if -fit_res[0] > min_res {
+
+		// Display results for this population
+		fmt.Println("Iteration:", i, "| Best pop:", pop[0], "| Fitness:", fit_res[0], "hours")
+		if fit_res[0] > min_res {
 			best_pop = pop[0]
-			min_res = -fit_res[0]
+			min_res = fit_res[0]
 		}
-		// Negatives replaced if maximising
+
+		pop_timeline = append(pop_timeline, pop[0])
+		fit_timeline = append(fit_timeline, fit_res[0])
 	}
 
-	fmt.Println(pop[len(pop)-1])
-	fmt.Println(fit_res[len(pop)-1])
-		
-	// Final Selection
+	save_timelines(pop_timeline, fit_timeline)
 
 	fmt.Println("DONE")
 	fmt.Println("-------------------")
 	fmt.Println("Best pop:", best_pop, "| Fitness:", min_res, "hours")
 	fmt.Println("-------------------")
+}
+
+
+
+func save_timelines(pop_timeline [][]int, fit_timeline []float64) {
+	file, _ := os.Create(SAVE_FILE)
+	defer file.Close()
+	w := csv.NewWriter(file)
+	defer w.Flush()
+	for i:=0;i<len(pop_timeline);i++{
+		var temp []string
+		temp = append(temp,  fmt.Sprintf("%f",fit_timeline[i]))
+		for j:=0;j<len(pop_timeline[i]);j++{
+			temp = append(temp, strconv.Itoa(pop_timeline[i][j]))
+		}
+		w.Write(temp)
+	}
 }
